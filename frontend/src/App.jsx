@@ -10,11 +10,14 @@ function App() {
   const [recipients, setRecipients] = useState("");
   const [body, setBody] = useState("");
   const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const handleSend = async (event) => {
     event.preventDefault();
+
+    if (loading) return;
+
     setMessage("");
     setSuccess(false);
 
@@ -27,16 +30,12 @@ function App() {
       ),
     ];
 
-    if (
-      !subject.trim() ||
-      !body.trim() ||
-      recipientList.length === 0
-    ) {
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!subject.trim() || !body.trim() || recipientList.length === 0) {
       setMessage("Please fill in all fields.");
       return;
     }
-
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!recipientList.every((email) => emailPattern.test(email))) {
       setMessage("Please check the recipient email addresses.");
@@ -44,11 +43,16 @@ function App() {
     }
 
     if (recipientList.length > 100) {
-      setMessage("A maximum of 100 recipients is allowed per request.");
+      setMessage("You can send to a maximum of 100 recipients at a time.");
       return;
     }
 
     setLoading(true);
+    setMessage("Connecting to the email server...");
+
+    // Prevent an unresponsive request from leaving the button loading forever.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
 
     try {
       const response = await axios.post(
@@ -57,84 +61,111 @@ function App() {
           subject: subject.trim(),
           body: body.trim(),
           recipients: recipientList,
+        },
+        {
+          timeout: 45000,
+          signal: controller.signal,
+          headers: {
+            "Content-Type": "application/json",
+          },
         }
       );
 
-      setSuccess(true);
-      setMessage(
-        response.data.message || "Emails sent successfully!"
-      );
+      const result = response.data;
 
+      if (result.success === false) {
+        setSuccess(false);
+        setMessage(result.message || "The server could not send the emails.");
+        return;
+      }
+
+      setSuccess(true);
+      setMessage(result.message || "Email request completed successfully.");
       setSubject("");
       setRecipients("");
       setBody("");
     } catch (error) {
       setSuccess(false);
-      setMessage(
-        error.response?.data?.message ||
-          "Unable to send emails. Please check the backend and try again."
-      );
+
+      if (error.code === "ERR_CANCELED" || error.code === "ECONNABORTED") {
+        setMessage(
+          "The request timed out. Please check the Render logs before trying again."
+        );
+      } else if (error.response) {
+        setMessage(
+          error.response.data?.message ||
+            `Server error (${error.response.status}). Please check the backend logs.`
+        );
+      } else {
+        setMessage(
+          "Could not reach the backend. Check the internet connection and Render service."
+        );
+      }
+
+      console.error("Bulk mail request failed:", error);
     } finally {
+      clearTimeout(timeoutId);
       setLoading(false);
     }
   };
 
   return (
-    <main className="app-container">
+    <div className="app-container">
       <header className="app-header">
-        <div className="brand-icon">B</div>
-        <div>
-          <h1>Bulk Mail</h1>
-          <p>Simple, reliable email campaigns</p>
-        </div>
+        <div className="brand-icon">✉</div>
+        <h1>Bulk Mail App</h1>
+        <p>Send emails to multiple recipients in one place.</p>
       </header>
 
-      <section className="mail-card">
-        <h2>Compose Email</h2>
-        <p className="description">
-          Write your message and add the recipients below.
-        </p>
-
+      <main className="mail-card">
         <form onSubmit={handleSend}>
-          <label htmlFor="subject">Email Subject</label>
-          <input
-            id="subject"
-            type="text"
-            placeholder="Enter email subject"
-            value={subject}
-            onChange={(event) => setSubject(event.target.value)}
-            required
-          />
+          <div className="form-group">
+            <label htmlFor="subject">Email Subject</label>
+            <input
+              id="subject"
+              type="text"
+              placeholder="Enter your email subject"
+              value={subject}
+              onChange={(event) => setSubject(event.target.value)}
+              disabled={loading}
+              required
+            />
+          </div>
 
-          <label htmlFor="recipients">Recipient Emails</label>
-          <textarea
-            id="recipients"
-            placeholder={"person1@example.com\nperson2@example.com"}
-            value={recipients}
-            onChange={(event) => setRecipients(event.target.value)}
-            rows={4}
-            required
-          />
+          <div className="form-group">
+            <label htmlFor="recipients">Recipient Emails</label>
+            <textarea
+              id="recipients"
+              placeholder={"Enter email addresses separated by commas or new lines"}
+              value={recipients}
+              onChange={(event) => setRecipients(event.target.value)}
+              disabled={loading}
+              rows={4}
+              required
+            />
+            <small>Maximum 100 unique recipients per request.</small>
+          </div>
 
-          <small>
-            Separate addresses with commas, semicolons, or new lines.
-          </small>
-
-          <label htmlFor="body">Email Message</label>
-          <textarea
-            id="body"
-            placeholder="Write your email message here..."
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-            rows={7}
-            required
-          />
+          <div className="form-group">
+            <label htmlFor="body">Email Body</label>
+            <textarea
+              id="body"
+              placeholder="Write your email message here..."
+              value={body}
+              onChange={(event) => setBody(event.target.value)}
+              disabled={loading}
+              rows={6}
+              required
+            />
+          </div>
 
           {message && (
             <div
               className={`status-message ${success ? "success" : "error"}`}
               role="status"
+              aria-live="polite"
             >
+              {loading && <span className="loading-spinner" />}
               {message}
             </div>
           )}
@@ -143,10 +174,12 @@ function App() {
             {loading ? "Sending..." : "Send Emails"}
           </button>
         </form>
-      </section>
+      </main>
 
-      <footer>Bulk Mail App · React + Node.js + MongoDB</footer>
-    </main>
+      <footer className="app-footer">
+        Bulk Mail App · React, Node.js & MongoDB
+      </footer>
+    </div>
   );
 }
 
