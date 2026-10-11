@@ -8,7 +8,6 @@ const nodemailer = require("nodemailer");
 dotenv.config();
 
 const app = express();
-
 app.use(cors());
 app.use(express.json({ limit: "100kb" }));
 
@@ -17,16 +16,16 @@ const MONGO_URI = process.env.MONGO_URI;
 const GMAIL_USER = process.env.GMAIL_USER;
 const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
 
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 let db;
 let transporter;
-
-const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 async function startServer() {
   try {
     if (!MONGO_URI || !GMAIL_USER || !GMAIL_APP_PASSWORD) {
       throw new Error(
-        "Missing MONGO_URI, GMAIL_USER, or GMAIL_APP_PASSWORD environment variable."
+        "Missing required environment variables: MONGO_URI, GMAIL_USER, GMAIL_APP_PASSWORD"
       );
     }
 
@@ -36,13 +35,14 @@ async function startServer() {
         strict: true,
         deprecationErrors: true,
       },
+      serverSelectionTimeoutMS: 10000,
+      connectTimeoutMS: 10000,
     });
 
     await client.connect();
     await client.db("admin").command({ ping: 1 });
 
     db = client.db("bulkMailDB");
-
     console.log("MongoDB connected successfully!");
 
     transporter = nodemailer.createTransport({
@@ -51,6 +51,9 @@ async function startServer() {
         user: GMAIL_USER,
         pass: GMAIL_APP_PASSWORD.replace(/\s/g, ""),
       },
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 20000,
     });
 
     app.get("/", (req, res) => {
@@ -62,12 +65,17 @@ async function startServer() {
         success: true,
         message: "Backend is running",
         databaseConnected: Boolean(db),
+        emailConfigured: Boolean(transporter),
       });
     });
 
     app.post("/api/send-email", async (req, res) => {
+      console.log("Received /api/send-email request");
+
+      let recordId;
+
       try {
-        const { subject, body, recipients } = req.body;
+        const { subject, body, recipients } = req.body || {};
 
         if (
           typeof subject !== "string" ||
@@ -86,7 +94,7 @@ async function startServer() {
         if (recipients.length > 100) {
           return res.status(400).json({
             success: false,
-            message: "A maximum of 100 recipients is allowed per request.",
+            message: "A maximum of 100 recipients is allowed.",
           });
         }
 
@@ -109,7 +117,9 @@ async function startServer() {
           });
         }
 
-        const record = {
+        console.log("Saving email record to MongoDB...");
+
+        const result = await db.collection("emails").insertOne({
           subject: subject.trim(),
           body: body.trim(),
           recipients: cleanRecipients,
@@ -117,64 +127,65 @@ async function startServer() {
           sentCount: 0,
           failedCount: 0,
           createdAt: new Date(),
-        };
+        });
 
-        const result = await db.collection("emails").insertOne(record);
+        recordId = result.insertedId;
+        console.log("Record saved. Attempting Gmail send...");
 
-        try {
-          const info = await transporter.sendMail({
-            from: GMAIL_USER,
-            to: cleanRecipients,
-            subject: subject.trim(),
-            text: body.trim(),
-          });
+        const info = await transporter.sendMail({
+          from: GMAIL_USER,
+          to: cleanRecipients,
+          subject: subject.trim(),
+          text: body.trim(),
+        });
 
-          await db.collection("emails").updateOne(
-            { _id: result.insertedId },
-            {
-              $set: {
-                status: "sent",
-                sentCount: cleanRecipients.length,
-                failedCount: 0,
-                messageId: info.messageId,
-                completedAt: new Date(),
-              },
-            }
-          );
+        console.log("Gmail accepted the message:", info.messageId);
 
-          return res.json({
-            success: true,
-            message: "Email sent successfully!",
-            sentCount: cleanRecipients.length,
-          });
-        } catch (emailError) {
-          console.error("Email sending failed:", emailError.message);
+        await db.collection("emails").updateOne(
+          { _id: recordId },
+          {
+            $set: {
+              status: "sent",
+              sentCount: cleanRecipients.length,
+              failedCount: 0,
+              messageId: info.messageId,
+              completedAt: new Date(),
+            },
+          }
+        );
 
-          await db.collection("emails").updateOne(
-            { _id: result.insertedId },
-            {
-              $set: {
-                status: "failed",
-                sentCount: 0,
-                failedCount: cleanRecipients.length,
-                error: emailError.message,
-                completedAt: new Date(),
-              },
-            }
-          );
+        return res.json({
+          success: true,
+          message: "Email sent successfully!",
+          sentCount: cleanRecipients.length,
+        });
+      } catch (error) {
+        console.error("Send-email request failed:", error.message);
 
+        if (recordId && db) {
+          try {
+            await db.collection("emails").updateOne(
+              { _id: recordId },
+              {
+                $set: {
+                  status: "failed",
+                  failedCount: 1,
+                  error: error.message,
+                  completedAt: new Date(),
+                },
+              }
+            );
+          } catch (dbError) {
+            console.error("Could not update email record:", dbError.message);
+          }
+        }
+
+        if (!res.headersSent) {
           return res.status(500).json({
             success: false,
-            message: "Email could not be sent. Please check Gmail settings.",
+            message: "Email failed. Check Render logs for the exact error.",
           });
         }
-      } catch (error) {
-        console.error("Request failed:", error.message);
-
-        return res.status(500).json({
-          success: false,
-          message: "Something went wrong while processing your request.",
-        });
       }
     });
 
