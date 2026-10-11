@@ -1,0 +1,159 @@
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  font-family: Arial, Helvetica, sans-serif;
+  background: #f3f5fb;
+  color: #20243a;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+.app-container {
+  width: 100%;
+  max-width: 850px;
+  margin: 0 auto;
+  padding: 40px 20px;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 30px;
+}
+
+.brand-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 15px;
+  background: #5546e8;
+  color: white;
+  font-size: 27px;
+  font-weight: bold;
+}
+
+.app-header h1 {
+  margin: 0 0 5px;
+  font-size: 28px;
+}
+
+.app-header p,
+.description {
+  margin: 0;
+  color: #747991;
+}
+
+.mail-card {
+  padding: 30px;
+  border: 1px solid #e6e8f0;
+  border-radius: 18px;
+  background: white;
+  box-shadow: 0 12px 35px rgba(30, 35, 70, 0.06);
+}
+
+.mail-card h2 {
+  margin: 0 0 10px;
+  font-size: 23px;
+}
+
+.description {
+  margin-bottom: 26px;
+  line-height: 1.5;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+}
+
+label {
+  margin: 18px 0 9px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+input,
+textarea {
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid #dfe2ec;
+  border-radius: 9px;
+  background: #fff;
+  color: #20243a;
+  outline: none;
+}
+
+input:focus,
+textarea:focus {
+  border-color: #5546e8;
+  box-shadow: 0 0 0 3px rgba(85, 70, 232, 0.1);
+}
+
+textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+small {
+  margin-top: 8px;
+  color: #747991;
+  line-height: 1.5;
+}
+
+button {
+  margin-top: 24px;
+  padding: 14px;
+  border: none;
+  border-radius: 9px;
+  background: #5546e8;
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #4335cc;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.status-message {
+  margin-top: 20px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f0efff;
+  color: #4335cc;
+  overflow-wrap: anywhere;
+}
+
+footer {
+  padding: 24px 0 0;
+  color: #85899d;
+  text-align: center;
+  font-size: 13px;
+}
+
+@media (max-width: 520px) {
+  .app-container {
+    padding: 24px 14px;
+  }
+
+  .mail-card {
+    padding: 20px;
+  }
+}
