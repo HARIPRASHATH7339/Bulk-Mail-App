@@ -3,23 +3,35 @@ import { useState } from "react";
 import axios from "axios";
 import "./App.css";
 
+const API_URL = "https://bulk-mail-app-backend-5f0k.onrender.com";
+
 function App() {
   const [subject, setSubject] = useState("");
   const [recipients, setRecipients] = useState("");
   const [body, setBody] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
 
   const handleSend = async (event) => {
     event.preventDefault();
     setMessage("");
+    setSuccess(false);
 
-    const recipientList = recipients
-      .split(/[,;\n]+/)
-      .map((email) => email.trim())
-      .filter(Boolean);
+    const recipientList = [
+      ...new Set(
+        recipients
+          .split(/[,;\s]+/)
+          .map((email) => email.trim())
+          .filter(Boolean)
+      ),
+    ];
 
-    if (!subject.trim() || !body.trim() || recipientList.length === 0) {
+    if (
+      !subject.trim() ||
+      !body.trim() ||
+      recipientList.length === 0
+    ) {
       setMessage("Please fill in all fields.");
       return;
     }
@@ -31,23 +43,36 @@ function App() {
       return;
     }
 
+    if (recipientList.length > 100) {
+      setMessage("A maximum of 100 recipients is allowed per request.");
+      return;
+    }
+
     setLoading(true);
 
     try {
       const response = await axios.post(
-        "http://localhost:5000/api/send",
+        `${API_URL}/api/send-email`,
         {
-          subject,
-          body,
+          subject: subject.trim(),
+          body: body.trim(),
           recipients: recipientList,
         }
       );
 
-      setMessage(response.data.message || "Request completed.");
+      setSuccess(true);
+      setMessage(
+        response.data.message || "Emails sent successfully!"
+      );
+
+      setSubject("");
+      setRecipients("");
+      setBody("");
     } catch (error) {
+      setSuccess(false);
       setMessage(
         error.response?.data?.message ||
-          "Unable to send emails. Please check the backend."
+          "Unable to send emails. Please check the backend and try again."
       );
     } finally {
       setLoading(false);
@@ -90,7 +115,10 @@ function App() {
             rows={4}
             required
           />
-          <small>Separate addresses with commas, semicolons, or new lines.</small>
+
+          <small>
+            Separate addresses with commas, semicolons, or new lines.
+          </small>
 
           <label htmlFor="body">Email Message</label>
           <textarea
@@ -103,7 +131,10 @@ function App() {
           />
 
           {message && (
-            <div className="status-message" role="status">
+            <div
+              className={`status-message ${success ? "success" : "error"}`}
+              role="status"
+            >
               {message}
             </div>
           )}
